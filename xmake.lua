@@ -14,9 +14,6 @@ add_rules("mode.debug", "mode.release")
 -- add_repositories("tuna https://mirrors.tuna.tsinghua.edu.cn/xmake-repo.git", {priority = 999})
 -- add_repositories("xmake-repo https://gitcode.com/xmake-mirror/xmake-repo.git")
 
--- 默认使用 gcc 工具链
-set_toolchains("gcc")
-
 --===========================================================
 -- 平台配置
 --===========================================================
@@ -27,32 +24,48 @@ option("platform")
     set_values("linux", "windows", "esp32", "ml307n", "yopen", "wasm")
 option_end()
 
--- 公共头文件目录
-add_includedirs("platforms/"..(get_config("platform") or "windows"))
-add_includedirs("platforms")
-add_includedirs("vendor/lua")
-add_includedirs("modules/zlib")
-add_includedirs("core")
-
--- MSYS/Mingw 宿主上 is_plat("windows") 为 false，但仍在用 Windows 工具链
-function is_windows_toolchain()
-    return is_plat("windows") or is_plat("msys") or is_plat("mingw") or is_plat("cygwin")
-end
-
---===========================================================
--- 包含子目录
---===========================================================
-includes("core", "modules", "drivers", "platforms", "vendor")
-
---===========================================================
--- 默认构建目标（非桌面平台使用）
---===========================================================
 local plat = get_config("platform") or "windows"
-if plat ~= "windows" and plat ~= "linux" then
-    target("all")
-        set_kind("phony")
-        add_deps("iot_core", "drivers", "iot")
-        add_deps("iot_crypto", "iot_fs", "iot_http", "iot_mqtt", "iot_modbus", "iot_net", "iot_zlib", "iot_lvgl", "iot_filters", "iot_pack", "iot_wdt")
-        add_deps("lua", "cjson", "lua-cjson", "gmssl", "libjpeg-turbo")
-        set_default(true)
+
+if plat == "ml307n" then
+    -- ML307N 嵌入式平台: 跳转到平台专用构建脚本
+    includes("platforms/ml307n/xmake.lua")
+else
+    -- 桌面平台: 使用宿主机 gcc 工具链
+    set_toolchains("gcc")
+
+    -- 公共头文件目录
+    add_includedirs("platforms/"..plat)
+    add_includedirs("platforms")
+    add_includedirs("vendor/lua")
+    add_includedirs("modules/zlib")
+    add_includedirs("core")
+
+    -- MSYS/Mingw 宿主上 is_plat("windows") 为 false，但仍在用 Windows 工具链
+    function is_windows_toolchain()
+        return is_plat("windows") or is_plat("msys") or is_plat("mingw") or is_plat("cygwin")
+    end
+
+    --===========================================================
+    -- 包含子目录 (排除 ml307n 嵌入式平台，使用专用构建脚本)
+    --===========================================================
+    includes("core", "modules", "drivers", "vendor")
+    -- 桌面平台专用
+    includes("platforms/windows")
+    includes("platforms/linux")
+    includes("platforms/esp32")
+    includes("platforms/yopen")
+    includes("platforms/wasm")
+
+    --===========================================================
+    -- 默认构建目标（桌面平台使用）
+    --===========================================================
+    target("iot-os")
+        set_kind("binary")
+        set_languages("c99")
+        add_files("core/*.c")
+        add_files("modules/**/*.c")
+        add_files("drivers/**/*.c")
+        add_files("vendor/lua/*.c")
+        add_files("platforms/" .. plat .. "/*.c")
+    target_end()
 end

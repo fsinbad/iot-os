@@ -24,6 +24,7 @@
 #include "cm_mem.h"
 #include "cm_fs.h"
 #include <stdint.h>
+#include <errno.h>
 #include "lwip/sockets.h"
 #include "lwip/ip_addr.h"
 #include "lwip/netdb.h"
@@ -32,6 +33,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#include <stdlib.h>
 
 /*===========================================================
  * 1. 内存管理接口 (mem)
@@ -43,7 +46,7 @@ extern "C" {
  * @return 指向分配内存的指针，失败返回 NULL
  */
 #define iot_malloc(size) \
-    cm_malloc((size_t)(size))
+    malloc((size_t)(size))
 
 /**
  * @brief 分配并初始化内存（置零，按4字节对齐）
@@ -52,7 +55,7 @@ extern "C" {
  * @return 指向分配内存的指针，失败返回 NULL
  */
 #define iot_calloc(nmemb, size) \
-    cm_calloc((size_t)(nmemb), (size_t)(size))
+    calloc((size_t)(nmemb), (size_t)(size))
 
 /**
  * @brief 重新分配内存（按4字节对齐）
@@ -61,30 +64,27 @@ extern "C" {
  * @return 指向重新分配内存的指针，失败返回 NULL
  */
 #define iot_realloc(ptr, size) \
-    cm_realloc((void *)(ptr), (size_t)(size))
+    realloc((void *)(ptr), (size_t)(size))
 
 /**
  * @brief 释放内存
  * @param ptr 要释放的内存指针
  */
 #define iot_free(ptr) \
-    cm_free((void *)(ptr))
+    free((void *)(ptr))
 
 /**
  * @brief 复制字符串（分配新内存）
  * @param str 要复制的源字符串
  * @return 指向新字符串的指针，失败返回 NULL
  */
-#define iot_strdup(str) ({ \
-    const char* _s = (str); \
-    if (!_s) NULL; \
-    else { \
-        size_t _len = strlen(_s) + 1; \
-        char* _d = (char*)cm_malloc(_len); \
-        if (_d) memcpy(_d, _s, _len); \
-        _d; \
-    } \
-})
+static inline char* iot_strdup(const char* str) {
+    if (!str) return NULL;
+    size_t len = strlen(str) + 1;
+    char* dst = (char*)malloc(len);
+    if (dst) memcpy(dst, str, len);
+    return dst;
+}
 
 /*===========================================================
  * 2. 互斥锁接口 (mutex)
@@ -217,7 +217,7 @@ extern "C" {
 #define IOT_OS_PRIO_ERROR        osPriorityError    /**< 错误优先级 */
 
 /**
- * @brief 创建任务（线程）
+ * @brief 创建任务
  * @param name 任务名称
  * @param func 任务函数
  * @param arg 传递给任务的参数
@@ -225,13 +225,19 @@ extern "C" {
  * @param priority 任务优先级
  * @return 任务句柄，失败返回 NULL
  */
-#define iot_task_create(name, func, arg, stack_size, priority) \
-    osThreadNew((func), (arg), \
-        &(const osThreadAttr_t){ \
-            .name = (name), \
-            .stack_size = (stack_size), \
-            .priority = (priority) \
-        })
+static inline iot_task_t iot_task_create(const char* name, osThreadFunc_t func, void* arg, uint32_t stack_size, osPriority_t priority) {
+    osThreadAttr_t attr;
+    attr.name = name;
+    attr.attr_bits = 0;
+    attr.cb_mem = NULL;
+    attr.cb_size = 0;
+    attr.stack_mem = NULL;
+    attr.stack_size = stack_size;
+    attr.priority = priority;
+    attr.tz_module = 0;
+    attr.reserved = 0;
+    return osThreadNew(func, arg, &attr);
+}
 
 /**
  * @brief 任务延时
@@ -780,11 +786,36 @@ int net_port_set_nonblocking(iot_socket_t fd);
 /**
  * @brief 打开文件
  * @param path 文件路径
- * @param mode 打开模式
+ * @param mode 打开模式 (字符串 "r"/"w"/"a" 或整数标志 CM_FS_RB 等)
  * @return 文件句柄，失败返回 NULL
  */
-#define iot_fs_open(path, mode) \
-    cm_fs_open((path), (mode))
+static inline iot_fs_file_t iot_fs_open_impl(const char* path, const char* mode) {
+    int32_t flag;
+    intptr_t p = (intptr_t)mode;
+    if (p == 0) {
+        flag = CM_FS_RB;
+    } else if (p < 0x100) {
+        /* 小地址 = 整数标志 */
+        flag = (int32_t)p;
+    } else {
+        /* 大地址 = 字符串指针 */
+        const char* m = (const char*)mode;
+        int has_plus = 0, is_write = 0, is_read = 0;
+        for (const char* q = m; *q; q++) {
+            if (*q == '+') has_plus = 1;
+            else if (*q == 'w') is_write = 1;
+            else if (*q == 'r') is_read = 1;
+            else if (*q == 'a') is_write = 1;
+        }
+        if (is_write && has_plus) flag = CM_FS_WBPLUS;
+        else if (is_read && has_plus) flag = CM_FS_RBPLUS;
+        else if (is_write) flag = CM_FS_WB;
+        else flag = CM_FS_RB;
+    }
+    return cm_fs_open(path, flag);
+}
+
+#define iot_fs_open(path, mode) iot_fs_open_impl((path), (const char*)(mode))
 
 /**
  * @brief 关闭文件
@@ -973,6 +1004,14 @@ int net_port_set_nonblocking(iot_socket_t fd);
  */
 #define iot_fs_closedir(dir) \
     cm_fs_find_close((dir))
+
+/**
+ * @brief 获取目录项名称
+ * @param dirent 目录项
+ * @return 文件名字符串
+ */
+#define iot_fs_dirent_name(dirent) \
+    ((const char*)(dirent).file_name)
 
 /**
  * @brief 获取文件当前位置

@@ -6,6 +6,9 @@
 @author  TRAE
 */
 
+#include "lua.h"
+#include "lauxlib.h"
+
 /* luaopen 函数声明 */
 extern int luaopen_os(lua_State* L);
 extern int luaopen_pm(lua_State* L);

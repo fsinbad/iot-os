@@ -156,14 +156,14 @@ LUAMOD_API int luaopen_lcd(lua_State* L) {
     luaL_setfuncs(L, lcd_lib, 0);
     
     /* SPI设备号常量 */
+    lua_pushinteger(L, CM_SPI_DEV_0);
+    lua_setfield(L, -2, "SPI_DEV_0");
+    
     lua_pushinteger(L, CM_SPI_DEV_1);
     lua_setfield(L, -2, "SPI_DEV_1");
     
     lua_pushinteger(L, CM_SPI_DEV_2);
     lua_setfield(L, -2, "SPI_DEV_2");
-    
-    lua_pushinteger(L, CM_SPI_DEV_3);
-    lua_setfield(L, -2, "SPI_DEV_3");
     
     return 1;
 }

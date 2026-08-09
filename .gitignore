@@ -55,3 +55,7 @@ dkms.conf
 *.dwo
 /.xmake
 /build
+
+# SDK
+/platforms/ml307n/CM8620OC-V1.1.1-SDK
+/bin

@@ -44,7 +44,7 @@ int driver_i2c_write_reg(driver_i2c_t* i2c, uint8_t addr, uint8_t reg, const uin
         return DRIVER_ERR_INVALID;
     }
 
-    return iot_i2c_write(i2c->fd, addr, reg, data, len);
+    return iot_i2c_write_reg(i2c->fd, addr, reg, data, len);
 }
 
 int driver_i2c_read_reg(driver_i2c_t* i2c, uint8_t addr, uint8_t reg, uint8_t* data, size_t len) {
@@ -52,7 +52,7 @@ int driver_i2c_read_reg(driver_i2c_t* i2c, uint8_t addr, uint8_t reg, uint8_t* d
         return DRIVER_ERR_INVALID;
     }
 
-    return iot_i2c_read(i2c->fd, addr, reg, data, len);
+    return iot_i2c_read_reg(i2c->fd, addr, reg, data, len);
 }
 
 int driver_i2c_write_bytes(driver_i2c_t* i2c, uint8_t addr, const uint8_t* data, size_t len) {

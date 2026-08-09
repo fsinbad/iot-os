@@ -56,13 +56,6 @@ print("cell:", cell.ci, cell.mcc, cell.mnc)
 
 #define CM_ICCID_LEN 22
 
-typedef enum {
-    CID_UNDEF_OR_UNREGIST = 0,
-    CID_ONLY_IPV4_ACT,
-    CID_ONLY_IPV6_ACT,
-    CID_IPV4V6_ACT,
-} cm_cid_status_t;
-
 extern uint8_t cm_get_default_cidnum(void);
 extern cm_cid_status_t cm_get_cidstatus(uint8_t cid);
 
@@ -297,12 +290,12 @@ static int iot_mobile_local_ip(lua_State* L) {
     }
     
     char ip_str[16] = {0};
-    ip4_addr_t ip = ifinfo.ifIp4Addr;
-    sprintf(ip_str, "%d.%d.%d.%d", 
-            (ip.addr >> 0) & 0xFF,
-            (ip.addr >> 8) & 0xFF,
-            (ip.addr >> 16) & 0xFF,
-            (ip.addr >> 24) & 0xFF);
+    uint32_t ip_addr = ifinfo.ifIp4Addr.u_addr.ip4.addr;
+    sprintf(ip_str, "%lu.%lu.%lu.%lu", 
+            (ip_addr >> 24) & 0xFF,
+            (ip_addr >> 16) & 0xFF,
+            (ip_addr >> 8) & 0xFF,
+            (ip_addr >> 0) & 0xFF);
     lua_pushstring(L, ip_str);
     return 1;
 }

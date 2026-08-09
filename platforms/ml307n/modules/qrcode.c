@@ -11,8 +11,8 @@
 #include "quirc.h"
 #endif
 
-/* QR码生成 */
-static int iot_qrcode_encode(lua_State* L) {
+/* QR码生成 (Lua绑定) */
+static int lua_qrcode_encode(lua_State* L) {
 #ifdef ENABLE_QRENCODE
     size_t text_len;
     const char* text = luaL_checklstring(L, 1, &text_len);
@@ -61,8 +61,8 @@ static int iot_qrcode_encode(lua_State* L) {
 #endif
 }
 
-/* QR码解码 */
-static int iot_qrcode_decode(lua_State* L) {
+/* QR码解码 (Lua绑定) */
+static int lua_qrcode_decode(lua_State* L) {
 #ifdef ENABLE_QUIRC
     size_t image_len;
     const char* image_data = luaL_checklstring(L, 1, &image_len);
@@ -146,8 +146,8 @@ static int iot_qrcode_decode(lua_State* L) {
 #endif
 }
 
-/* QR码数量统计 */
-static int iot_qrcode_count(lua_State* L) {
+/* QR码数量统计 (Lua绑定) */
+static int lua_qrcode_count(lua_State* L) {
 #ifdef ENABLE_QUIRC
     size_t image_len;
     const char* image_data = luaL_checklstring(L, 1, &image_len);
@@ -195,8 +195,8 @@ static int iot_qrcode_count(lua_State* L) {
 #endif
 }
 
-/* 版本信息 */
-static int iot_qrcode_version(lua_State* L) {
+/* 版本信息 (Lua绑定) */
+static int lua_qrcode_version(lua_State* L) {
 #ifdef ENABLE_QRENCODE
     lua_pushstring(L, "libqrencode 4.1.1 + quirc");
 #else
@@ -210,10 +210,10 @@ static int iot_qrcode_version(lua_State* L) {
 }
 
 static const luaL_Reg qrcode_lib[] = {
-    {"encode",  iot_qrcode_encode},
-    {"decode",  iot_qrcode_decode},
-    {"count",   iot_qrcode_count},
-    {"version", iot_qrcode_version},
+    {"encode",  lua_qrcode_encode},
+    {"decode",  lua_qrcode_decode},
+    {"count",   lua_qrcode_count},
+    {"version", lua_qrcode_version},
     {NULL, NULL}
 };
 

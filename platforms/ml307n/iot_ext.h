@@ -101,11 +101,35 @@ static cm_i2c_cfg_t g_i2c_cfgs[CM_I2C_DEV_NUM] = {0};
 #define iot_i2c_deinit(fd) \
     cm_i2c_close((cm_i2c_dev_e)(fd))
 
+/* 带寄存器地址版本 (5 参数, 驱动用) */
+static inline int iot_i2c_write_reg(int fd, uint8_t addr, uint8_t reg, const uint8_t* data, uint32_t len) {
+    uint8_t buf[256];
+    if (len + 1 > sizeof(buf)) return -1;
+    buf[0] = reg;
+    memcpy(buf + 1, data, len);
+    return cm_i2c_write_v2((cm_i2c_dev_e)(fd), (addr), buf, len + 1);
+}
+
+static inline int iot_i2c_read_reg(int fd, uint8_t addr, uint8_t reg, uint8_t* data, uint32_t len) {
+    uint8_t cmd = reg;
+    int ret = cm_i2c_write_v2((cm_i2c_dev_e)(fd), (addr), &cmd, 1);
+    if (ret < 0) return ret;
+    return cm_i2c_read_v2((cm_i2c_dev_e)(fd), (addr), (data), (len));
+}
+
+/* 标准 4 参数版本 */
 #define iot_i2c_write(fd, addr, data, len) \
     cm_i2c_write_v2((cm_i2c_dev_e)(fd), (addr), (data), (len))
 
 #define iot_i2c_read(fd, addr, data, len) \
     cm_i2c_read_v2((cm_i2c_dev_e)(fd), (addr), (data), (len))
+
+/* 5 参数带寄存器版本 (兼容 drivers.c 调用) */
+#define iot_i2c_write5(fd, addr, reg, data, len) \
+    iot_i2c_write_reg((fd), (addr), (reg), (data), (len))
+
+#define iot_i2c_read5(fd, addr, reg, data, len) \
+    iot_i2c_read_reg((fd), (addr), (reg), (data), (len))
 
 #define iot_i2c_write_then_read(fd, addr, wdata, wlen, rdata, rlen) \
     cm_i2c_write_then_read((cm_i2c_dev_e)(fd), (addr), (wdata), (wlen), (rdata), (rlen))
