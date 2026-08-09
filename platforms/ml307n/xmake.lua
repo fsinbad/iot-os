@@ -28,7 +28,7 @@ set_plat("cross")
 set_config("chip", "ict2110")
 set_config("cpu_arch", "ZCrisc-v")
 set_config("cpu_type", "cpu-ap")
-set_config("buildir", "bin/.build/cpu-ap")
+set_config("buildir", "build/ml307n")
 set_optimize("smallest")
 set_warnings("all")
 
