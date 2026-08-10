@@ -17,7 +17,7 @@ local SDK_PREBUILD = SDK_CODE .. "/prebuild/mdl/lib"
 local SDK_CUSTOM  = SDK_CODE .. "/custom/ml307n-dc/lib"
 local LOCAL_INCLUDE = PLAT_DIR .. "/include/mdl"
 local LOCAL_OPINCLUDE = PLAT_DIR .. "/include/opencpu/include"
-local SDK_MKTOOLS = SDK_ROOT .. "/ict-build/mkimg"
+local SDK_MKTOOLS = SDK_CODE .. "/tools/mkimg"
 local PROJECT_ROOT = PLAT_DIR .. "/../.."
 local BOARD_DIR   = SDK_CODE .. "/src/board/ml307n_dc"
 
@@ -297,9 +297,9 @@ target("cpu-ap.elf")
     after_build(function(target)
         local BIN_DIR    = "$(buildir)/iot-os/ap"
         local VERSION_DIR = "$(buildir)/iot-os/version"
-        local GCC        = target:tool("cc")
         local OBJCPY     = target:tool("objcopy")
         local TARGET     = target:targetfile()
+        local CP_BIN_DIR = SDK_CODE .. "/prebuild/mdl/cp"
 
         -- 创建输出目录
         if not os.exists(BIN_DIR) then
@@ -307,6 +307,44 @@ target("cpu-ap.elf")
         end
         if not os.exists(VERSION_DIR) then
             os.mkdir(VERSION_DIR)
+        end
+
+        -- 读取分区表获取 zknl 大小
+        local PARTITION_NAME = "xpartition.ini"
+        local XIP_MODE = os.getenv("ENABLE_XIP") or "y"
+        if XIP_MODE == "n" or XIP_MODE == "normal" then
+            PARTITION_NAME = "npartition.ini"
+        end
+        local PARTITION_PATH = BOARD_DIR .. "/cfg/" .. PARTITION_NAME
+        local ZKNL_SIZE = "0x000D2000"  -- 默认 xpartition.ini 中的 zknl 大小
+        if os.exists(PARTITION_PATH) then
+            local PART_TBL = io.open(PARTITION_PATH, "r")
+            if PART_TBL then
+                for LINE in PART_TBL:lines() do
+                    local PART_NAME = string.match(LINE, "zknl")
+                    if PART_NAME == "zknl" then
+                        local WORDS = {}
+                        for W in string.gmatch(LINE, "%w+") do
+                            WORDS[#WORDS + 1] = W
+                        end
+                        if WORDS[3] then
+                            ZKNL_SIZE = WORDS[3]
+                            cprint("  分区 zknl 大小: " .. ZKNL_SIZE)
+                        end
+                    end
+                end
+                PART_TBL:close()
+            end
+        end
+
+        -- 注: iot-os 固件较大 (~900KB)，默认 zknl 分区 (0x000D2000 = 840KB) 不够
+        -- 使用更大的打包尺寸，实际烧录时需根据分区调整
+        local ZKNL_SIZE_NUM = tonumber(ZKNL_SIZE)
+        -- 如果分区尺寸小于 2MB，使用 4MB 作为打包尺寸 (适配 iot-os 大固件)
+        if ZKNL_SIZE_NUM < 0x200000 then
+            cprint("${bright yellow}注意: zknl 分区较小 (" .. ZKNL_SIZE .. "), 使用更大的打包尺寸${clear}")
+            ZKNL_SIZE = "0x400000"
+            cprint("  打包尺寸: " .. ZKNL_SIZE)
         end
 
         -- 提取各段为二进制
@@ -333,49 +371,41 @@ target("cpu-ap.elf")
         os.rm(BIN_DIR .. "/ap_iram2.bin")
         os.rm(BIN_DIR .. "/ap_ddr.bin")
 
-        -- XIP 镜像 (可选)
-        if os.getenv("ENABLE_XIP") == "y" then
-            os.exec(OBJCPY .. " -j .xip_text -j .xip_rodata -j .xip_dlmo -I elf32-littleriscv " .. TARGET .. " -O binary " .. BIN_DIR .. "/xap.bin\n")
-        end
-
         -- 拷贝 ELF 和 MAP 到输出目录
         local ELF_SRC = "$(buildir)/iot-os/cpu-ap.elf"
         local MAP_SRC = "$(buildir)/iot-os/cpu-ap.map"
         if os.exists(ELF_SRC) then os.cp(ELF_SRC, BIN_DIR) end
         if os.exists(MAP_SRC) then os.cp(MAP_SRC, BIN_DIR) end
 
-        -- 打包版本目录 (如果 CP 固件存在)
-        local CP_BIN_DIR = SDK_CODE .. "/bin/ml307n-dc/cp"
+        -- 打包 zknl.img (CP + AP 固件)
         if os.exists(CP_BIN_DIR .. "/zcp.bin") then
             local MKIMAGE = SDK_MKTOOLS .. "/mkimage.exe"
             os.exec(MKIMAGE ..
-                " --size=0x400000 --cpuCp=" .. CP_BIN_DIR .. "/zcp.bin" ..
+                " --size=" .. ZKNL_SIZE ..
+                " --cpuCp=" .. CP_BIN_DIR .. "/zcp.bin" ..
                 " --cpuCpLoadAddr=0x80000000 --cpuCpEntry=0xF5000000 --cpuCpMultiSections" ..
                 " --cpuAp=" .. BIN_DIR .. "/zap.bin" ..
                 " --cpuApLoadAddr=0x800FE800 --cpuApEntry=0x00008000 --cpuApMultiSections" ..
                 " --packSize=0x40 --output=" .. BIN_DIR .. "/zknl.img\n")
-
-            -- XIP 联合打包
-            if os.getenv("ENABLE_XIP") == "y" and os.exists(CP_BIN_DIR .. "/xcp.bin") then
-                if os.exists(BIN_DIR .. "/xap.bin") then
-                    local MKJOINT = SDK_MKTOOLS .. "/joint.exe"
-                    os.exec(MKJOINT ..
-                        " --size=0x400000 --bin1=" .. CP_BIN_DIR .. "/xcp.bin" ..
-                        " --bin2=" .. BIN_DIR .. "/xap.bin" ..
-                        " --align=0x400 --output=" .. BIN_DIR .. "/xknl.img\n")
-                end
-            end
+            cprint("${bright green}zknl.img 生成成功${clear}")
+        else
+            cprint("${bright yellow}注意: 未找到 CP 固件 (zcp.bin), 跳过 zknl.img 打包${clear}")
+            cprint("  AP 固件已生成: " .. BIN_DIR .. "/zap.bin")
         end
 
         -- 拷贝固件到版本目录
         if os.exists(BIN_DIR .. "/cpu-ap.elf") then os.cp(BIN_DIR .. "/cpu-ap.elf", VERSION_DIR) end
-        if os.exists(BIN_DIR .. "/*.img") then os.cp(BIN_DIR .. "/*.img", VERSION_DIR) end
+        if os.exists(BIN_DIR .. "/zknl.img") then os.cp(BIN_DIR .. "/zknl.img", VERSION_DIR) end
         if os.exists(BIN_DIR .. "/cpu-ap.map") then os.cp(BIN_DIR .. "/cpu-ap.map", VERSION_DIR) end
 
         cprint("============================================================")
         cprint("  ML307N 固件构建完成!")
         cprint("  输出目录: " .. BIN_DIR)
-        cprint("  固件文件: " .. BIN_DIR .. "/zknl.img")
+        if os.exists(BIN_DIR .. "/zknl.img") then
+            cprint("  固件文件: " .. BIN_DIR .. "/zknl.img")
+        else
+            cprint("  AP 固件:  " .. BIN_DIR .. "/zap.bin")
+        end
         cprint("============================================================")
     end)
 
