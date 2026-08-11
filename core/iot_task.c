@@ -22,6 +22,7 @@
 #include "iot_os.h"
 #include "iot_modules.h"
 #include "iot.luac.h"
+#include "master.luac.h"
 #include "zlib.h"
 
 #define LUA_STACK_SIZE  (16 * 1024)
@@ -217,6 +218,20 @@ void iot_lua_task(void* argument)
             } else {
                 LOG_DEBUG("default OK");
             }
+        }
+    }
+
+    /* 加载 master 模块 */
+    LOG_INFO("load master module");
+    if (luaL_loadbuffer(g_lua_state, (const char*)master_luac, master_luac_len, "master.luac") != LUA_OK) {
+        LOG_ERROR("load master failed: %s", lua_tostring(g_lua_state, -1));
+        lua_pop(g_lua_state, 1);
+    } else {
+        if (lua_pcall(g_lua_state, 0, 1, 0) != LUA_OK) {
+            LOG_ERROR("exec master failed: %s", lua_tostring(g_lua_state, -1));
+            lua_pop(g_lua_state, 1);
+        } else {
+            LOG_INFO("master module loaded OK");
         }
     }
 

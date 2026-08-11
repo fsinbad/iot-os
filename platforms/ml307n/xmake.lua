@@ -7,19 +7,34 @@
 -----------------------------------------------------------------------
 
 -----------------------------------------------------------------------
+-- 参数配置 (从命令行传入)
+-- 用法: xmake f --board=ml307n_dc --sdkver=mdl
+-----------------------------------------------------------------------
+local BOARD_NAME  = get_config("board") or "ml307n_dc"
+local SDK_VER     = get_config("sdkver") or "mdl"
+
+-----------------------------------------------------------------------
 -- 路径定义
 -----------------------------------------------------------------------
 local PLAT_DIR   = os.scriptdir()
 local SDK_ROOT   = PLAT_DIR .. "/CM8620OC-V1.1.1-SDK"
 local SDK_CODE   = SDK_ROOT .. "/code"
 local SDK_TOOLCHAIN = SDK_ROOT .. "/ict-build/ZCnuclei/win"
-local SDK_PREBUILD = SDK_CODE .. "/prebuild/mdl/lib"
-local SDK_CUSTOM  = SDK_CODE .. "/custom/ml307n-dc/lib"
-local LOCAL_INCLUDE = PLAT_DIR .. "/include/mdl"
+local SDK_PREBUILD_LIB = SDK_CODE .. "/prebuild/" .. SDK_VER .. "/lib"
+local SDK_CUSTOM_LIB = SDK_CODE .. "/custom/" .. BOARD_NAME .. "/lib"
+local LOCAL_INCLUDE = PLAT_DIR .. "/include/" .. SDK_VER
 local LOCAL_OPINCLUDE = PLAT_DIR .. "/include/opencpu/include"
 local SDK_MKTOOLS = SDK_CODE .. "/tools/mkimg"
 local PROJECT_ROOT = PLAT_DIR .. "/../.."
-local BOARD_DIR   = SDK_CODE .. "/src/board/ml307n_dc"
+local BOARD_DIR   = SDK_CODE .. "/src/board/" .. BOARD_NAME
+
+-- 日志输出
+cprint("${bright green}============================================${clear}")
+cprint("${bright green}  ML307N iot-os 编译配置${clear}")
+cprint("${bright green}  开发板: ${clear}" .. BOARD_NAME)
+cprint("${bright green}  SDK版本: ${clear}" .. SDK_VER)
+cprint("${bright green}  平台目录: ${clear}" .. PLAT_DIR)
+cprint("${bright green}============================================${clear}")
 
 -----------------------------------------------------------------------
 -- 平台配置
@@ -151,8 +166,8 @@ add_includedirs(PLAT_DIR, {public = true})
 -----------------------------------------------------------------------
 -- SDK 预编译库链接
 -----------------------------------------------------------------------
-add_linkdirs(SDK_PREBUILD)
-add_linkdirs(SDK_CUSTOM)
+add_linkdirs(SDK_PREBUILD_LIB)
+add_linkdirs(SDK_CUSTOM_LIB)
 
 -- SDK 基础库 (prebuild)
 local sdk_prebuild_libs = {
@@ -256,12 +271,6 @@ target("cpu-ap.elf")
     -- AI 模块暂不加入 (依赖 http/net 模块)
     -- add_files(PROJECT_ROOT .. "/modules/ai/*.c")
 
-    -- LVGL vendor 源码 (可选, 体积大)
-    if os.getenv("ENABLE_LVGL") == "y" then
-        add_defines("ENABLE_LVGL")
-        add_files(PROJECT_ROOT .. "/vendor/lvgl-9.5.0/src/**/*.c")
-    end
-
     -- 设备驱动源码
     add_files(PROJECT_ROOT .. "/drivers/*.c")
     add_files(PROJECT_ROOT .. "/drivers/ads1115/*.c", {optional = true})
@@ -286,11 +295,13 @@ target("cpu-ap.elf")
     add_files(PROJECT_ROOT .. "/vendor/miniz/*.c")
 
     -- LVGL (可选，占空间大)
-    if os.getenv("ENABLE_LVGL") == "y" then
+    local ENABLE_LVGL = get_config("enable_lvgl") or os.getenv("ENABLE_LVGL") or "n"
+    if ENABLE_LVGL == "y" or ENABLE_LVGL == "1" then
         add_defines("ENABLE_LVGL")
         add_files(PROJECT_ROOT .. "/vendor/lvgl-9.5.0/src/**/*.c")
         add_includedirs(PROJECT_ROOT .. "/vendor/lvgl-9.5.0", {public = true})
         add_includedirs(PROJECT_ROOT .. "/vendor/lvgl-9.5.0/src", {public = true})
+        cprint("${bright green}LVGL: 已启用${clear}")
     end
 
     -- 后处理: 提取固件段并打包
@@ -299,7 +310,17 @@ target("cpu-ap.elf")
         local VERSION_DIR = "$(buildir)/iot-os/version"
         local OBJCPY     = target:tool("objcopy")
         local TARGET     = target:targetfile()
-        local CP_BIN_DIR = SDK_CODE .. "/prebuild/mdl/cp"
+        local CP_BIN_DIR = SDK_CODE .. "/prebuild/" .. SDK_VER .. "/cp"
+
+        -- 工具路径 (Windows/Linux 兼容)
+        local MK_MERGE  = SDK_MKTOOLS .. "/merge"
+        local MK_IMAGE  = SDK_MKTOOLS .. "/mkimage"
+        local MK_JOINT  = SDK_MKTOOLS .. "/joint"
+        if is_os("windows") then
+            MK_MERGE = MK_MERGE .. ".exe"
+            MK_IMAGE = MK_IMAGE .. ".exe"
+            MK_JOINT = MK_JOINT .. ".exe"
+        end
 
         -- 创建输出目录
         if not os.exists(BIN_DIR) then
@@ -355,8 +376,7 @@ target("cpu-ap.elf")
         os.exec(OBJCPY .. " -j .psram -j .text -j .rodata -j .dlmo -j .data -I elf32-littleriscv " .. TARGET .. " -O binary " .. BIN_DIR .. "/ap_ddr.bin\n")
 
         -- 合并各段为 zap.bin
-        local MERGE = SDK_MKTOOLS .. "/merge.exe"
-        os.exec(MERGE ..
+        os.exec(MK_MERGE ..
             " --addr=0x800FE800 --bin=" .. BIN_DIR .. "/ap_ddr.bin" ..
             " --addr=0x00008000 --bin=" .. BIN_DIR .. "/ap_ilm.bin" ..
             " --addr=0x00010000 --bin=" .. BIN_DIR .. "/ap_dlm.bin" ..
@@ -379,8 +399,7 @@ target("cpu-ap.elf")
 
         -- 打包 zknl.img (CP + AP 固件)
         if os.exists(CP_BIN_DIR .. "/zcp.bin") then
-            local MKIMAGE = SDK_MKTOOLS .. "/mkimage.exe"
-            os.exec(MKIMAGE ..
+            os.exec(MK_IMAGE ..
                 " --size=" .. ZKNL_SIZE ..
                 " --cpuCp=" .. CP_BIN_DIR .. "/zcp.bin" ..
                 " --cpuCpLoadAddr=0x80000000 --cpuCpEntry=0xF5000000 --cpuCpMultiSections" ..
